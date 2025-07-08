@@ -128,14 +128,28 @@ const AIChat: React.FC<AIChatProps> = ({
       
       // Parse the nested toolOutput structure
       let actualContent = data.response || data;
-      if (data.toolOutput && data.toolOutput[0] && data.toolOutput[0].text) {
+      if (data.toolOutput && Array.isArray(data.toolOutput)) {
+  const first = data.toolOutput[0];
+
+      if (first.type === 'text' && typeof first.text === 'string') {
         try {
-          actualContent = JSON.parse(data.toolOutput[0].text);
+          const parsed = JSON.parse(first.text);
+    
+          // Check if parsed contains graph_dot or visualization
+          if (parsed.graph_dot || parsed.ate_plot || parsed.visualization || parsed.message) {
+            actualContent = parsed;
+          } else {
+            actualContent = first.text;  // Just show as markdown
+          }
         } catch (error) {
-          console.error('Failed to parse toolOutput:', error);
-          actualContent = data.toolOutput[0].text;
+          console.warn('toolOutput parse error:', error);
+          actualContent = first.text;  // fallback as plain string
         }
+      } else {
+        actualContent = first;
       }
+    }
+
       
       const responseType = detectResponseType(actualContent);
       
