@@ -41,6 +41,34 @@ const AIChat: React.FC<AIChatProps> = ({
   }, [messages]);
 
   const detectResponseType = (response: any): ResponseType => {
+    // Handle object responses from causal agent
+    if (typeof response === 'object' && response !== null) {
+      // Check for Plotly charts
+      if (response.ate_plot || response.visualization) {
+        return 'plotly';
+      }
+      
+      // Check for DOT graphs
+      if (response.graph_dot) {
+        return 'graphviz';
+      }
+      
+      // Check for direct Plotly structure
+      if (response.data && response.layout) {
+        return 'plotly';
+      }
+      
+      // Check for markdown content
+      if (response.message || response.note) {
+        const content = response.message || response.note;
+        if (typeof content === 'string' && 
+            (content.includes('#') || content.includes('**') || content.includes('*') || 
+             content.includes('-') || content.includes('1.'))) {
+          return 'markdown';
+        }
+      }
+    }
+    
     // Check if response is a string
     if (typeof response === 'string') {
       // Check for Plotly JSON structure
@@ -62,11 +90,6 @@ const AIChat: React.FC<AIChatProps> = ({
       
       // Default to markdown
       return 'markdown';
-    }
-    
-    // Check if response is object with Plotly structure
-    if (typeof response === 'object' && response.data && response.layout) {
-      return 'plotly';
     }
     
     // Default fallback

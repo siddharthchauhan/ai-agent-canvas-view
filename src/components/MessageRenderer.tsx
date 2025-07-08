@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { Graphviz } from '@hpcc-js/wasm';
 import { ResponseType } from '@/types/chat';
 
 // Lazy load Plotly to reduce bundle size
@@ -186,15 +187,94 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
     }
   };
 
+  const renderGraphviz = (dotContent: string) => {
+    const [svgContent, setSvgContent] = React.useState<string>('');
+    const [error, setError] = React.useState<string>('');
+
+    React.useEffect(() => {
+      const renderDot = async () => {
+        try {
+          const graphviz = await Graphviz.load();
+          const svg = graphviz.dot(dotContent);
+          setSvgContent(svg);
+          setError('');
+        } catch (err) {
+          console.error('Error rendering DOT graph:', err);
+          setError(err instanceof Error ? err.message : 'Failed to render graph');
+        }
+      };
+
+      if (dotContent) {
+        renderDot();
+      }
+    }, [dotContent]);
+
+    if (error) {
+      return (
+        <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 my-4">
+          <p className="text-destructive font-medium mb-2">Graph Rendering Error</p>
+          <p className="text-sm text-muted-foreground">
+            Failed to render DOT graph: {error}
+          </p>
+          <details className="mt-2">
+            <summary className="text-sm cursor-pointer text-muted-foreground">
+              Show DOT source
+            </summary>
+            <pre className="text-xs mt-2 p-2 bg-muted rounded overflow-auto">
+              {dotContent}
+            </pre>
+          </details>
+        </div>
+      );
+    }
+
+    if (!svgContent) {
+      return (
+        <div className="flex items-center justify-center h-64 bg-muted rounded-lg">
+          <div className="text-muted-foreground">Rendering graph...</div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="my-4 bg-card rounded-lg p-4 shadow-chat">
+        <div 
+          className="flex justify-center"
+          dangerouslySetInnerHTML={{ __html: svgContent }}
+        />
+      </div>
+    );
+  };
+
+  const extractContent = (data: any, type: ResponseType) => {
+    if (typeof data === 'object' && data !== null) {
+      switch (type) {
+        case 'plotly':
+          return data.ate_plot || data.visualization || data;
+        case 'graphviz':
+          return data.graph_dot;
+        case 'markdown':
+          return data.message || data.note || JSON.stringify(data, null, 2);
+        default:
+          return data.message || data.note || data;
+      }
+    }
+    return data;
+  };
+
   // Main rendering logic
+  const extractedContent = extractContent(content, type);
+  
   switch (type) {
     case 'html':
-      return renderHTML(content);
+      return renderHTML(extractedContent);
     case 'plotly':
-      return renderPlotly(content);
+      return renderPlotly(extractedContent);
+    case 'graphviz':
+      return renderGraphviz(extractedContent);
     case 'markdown':
     default:
-      return renderMarkdown(typeof content === 'string' ? content : JSON.stringify(content, null, 2));
+      return renderMarkdown(typeof extractedContent === 'string' ? extractedContent : JSON.stringify(extractedContent, null, 2));
   }
 };
 
