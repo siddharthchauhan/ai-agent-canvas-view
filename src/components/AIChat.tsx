@@ -125,12 +125,24 @@ const AIChat: React.FC<AIChatProps> = ({
       }
 
       const data = await response.json();
-      const responseType = detectResponseType(data.response || data);
+      
+      // Parse the nested toolOutput structure
+      let actualContent = data.response || data;
+      if (data.toolOutput && data.toolOutput[0] && data.toolOutput[0].text) {
+        try {
+          actualContent = JSON.parse(data.toolOutput[0].text);
+        } catch (error) {
+          console.error('Failed to parse toolOutput:', error);
+          actualContent = data.toolOutput[0].text;
+        }
+      }
+      
+      const responseType = detectResponseType(actualContent);
       
       const agentMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'agent',
-        content: data.response || data,
+        content: actualContent,
         responseType,
         timestamp: new Date()
       };
