@@ -1,0 +1,201 @@
+import React, { Suspense } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { ResponseType } from '@/types/chat';
+
+// Lazy load Plotly to reduce bundle size
+const Plot = React.lazy(() => import('react-plotly.js'));
+
+interface MessageRendererProps {
+  content: any;
+  type: ResponseType;
+  darkMode?: boolean;
+}
+
+const MessageRenderer: React.FC<MessageRendererProps> = ({ 
+  content, 
+  type, 
+  darkMode = false 
+}) => {
+  const codeStyle = darkMode ? oneDark : oneLight;
+
+  const renderMarkdown = (text: string) => (
+    <div className="prose prose-sm dark:prose-invert max-w-none">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeRaw]}
+        components={{
+          code(props) {
+            const { children, className, ...rest } = props;
+            const match = /language-(\w+)/.exec(className || '');
+            const isInline = !match;
+            
+            return isInline ? (
+              <code className="bg-muted px-1 py-0.5 rounded text-sm font-mono" {...rest}>
+                {children}
+              </code>
+            ) : (
+              <SyntaxHighlighter
+                style={codeStyle as any}
+                language={match[1]}
+                PreTag="div"
+              >
+                {String(children).replace(/\n$/, '')}
+              </SyntaxHighlighter>
+            );
+          },
+        table: ({ children }) => (
+          <div className="overflow-x-auto my-4">
+            <table className="min-w-full border border-border rounded-lg">
+              {children}
+            </table>
+          </div>
+        ),
+        thead: ({ children }) => (
+          <thead className="bg-muted">
+            {children}
+          </thead>
+        ),
+        th: ({ children }) => (
+          <th className="border border-border px-4 py-2 text-left font-medium">
+            {children}
+          </th>
+        ),
+        td: ({ children }) => (
+          <td className="border border-border px-4 py-2">
+            {children}
+          </td>
+        ),
+        blockquote: ({ children }) => (
+          <blockquote className="border-l-4 border-primary pl-4 italic">
+            {children}
+          </blockquote>
+        ),
+        h1: ({ children }) => (
+          <h1 className="text-2xl font-bold mb-4 text-foreground">
+            {children}
+          </h1>
+        ),
+        h2: ({ children }) => (
+          <h2 className="text-xl font-semibold mb-3 text-foreground">
+            {children}
+          </h2>
+        ),
+        h3: ({ children }) => (
+          <h3 className="text-lg font-medium mb-2 text-foreground">
+            {children}
+          </h3>
+        ),
+      }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
+
+  const renderHTML = (html: string) => (
+    <div 
+      className="prose prose-sm dark:prose-invert max-w-none"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+
+  const renderPlotly = (data: any) => {
+    let plotData;
+    
+    try {
+      // Handle string JSON
+      if (typeof data === 'string') {
+        plotData = JSON.parse(data);
+      } else {
+        plotData = data;
+      }
+
+      // Ensure we have the required structure
+      if (!plotData.data || !plotData.layout) {
+        throw new Error('Invalid Plotly data structure');
+      }
+
+      // Enhance layout for better appearance
+      const enhancedLayout = {
+        ...plotData.layout,
+        paper_bgcolor: 'transparent',
+        plot_bgcolor: 'transparent',
+        font: {
+          family: 'Inter, system-ui, sans-serif',
+          size: 12,
+          color: darkMode ? '#e5e7eb' : '#374151',
+          ...plotData.layout.font
+        },
+        margin: {
+          l: 50,
+          r: 50,
+          t: 50,
+          b: 50,
+          ...plotData.layout.margin
+        }
+      };
+
+      const config = {
+        displayModeBar: true,
+        displaylogo: false,
+        modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+        responsive: true,
+        ...plotData.config
+      };
+
+      return (
+        <Suspense fallback={
+          <div className="flex items-center justify-center h-64 bg-muted rounded-lg">
+            <div className="text-muted-foreground">Loading chart...</div>
+          </div>
+        }>
+          <div className="my-4 bg-card rounded-lg p-4 shadow-chat">
+            <Plot
+              data={plotData.data}
+              layout={enhancedLayout}
+              config={config}
+              className="w-full"
+              useResizeHandler={true}
+              style={{ width: '100%', height: '400px' }}
+            />
+          </div>
+        </Suspense>
+      );
+    } catch (error) {
+      console.error('Error rendering Plotly chart:', error);
+      return (
+        <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 my-4">
+          <p className="text-destructive font-medium mb-2">Chart Rendering Error</p>
+          <p className="text-sm text-muted-foreground">
+            Failed to render chart. Please check the data format.
+          </p>
+          <details className="mt-2">
+            <summary className="text-sm cursor-pointer text-muted-foreground">
+              Show raw data
+            </summary>
+            <pre className="text-xs mt-2 p-2 bg-muted rounded overflow-auto">
+              {typeof data === 'string' ? data : JSON.stringify(data, null, 2)}
+            </pre>
+          </details>
+        </div>
+      );
+    }
+  };
+
+  // Main rendering logic
+  switch (type) {
+    case 'html':
+      return renderHTML(content);
+    case 'plotly':
+      return renderPlotly(content);
+    case 'markdown':
+    default:
+      return renderMarkdown(typeof content === 'string' ? content : JSON.stringify(content, null, 2));
+  }
+};
+
+export default MessageRenderer;
