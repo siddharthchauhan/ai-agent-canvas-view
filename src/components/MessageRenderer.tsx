@@ -48,24 +48,34 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
             );
           },
         table: ({ children }) => (
-          <div className="overflow-x-auto my-4">
-            <table className="min-w-full border border-border rounded-lg">
+          <div className="overflow-x-auto my-4 border border-border rounded-lg">
+            <table className="min-w-full">
               {children}
             </table>
           </div>
         ),
         thead: ({ children }) => (
-          <thead className="bg-muted">
+          <thead className="bg-muted/50">
             {children}
           </thead>
         ),
+        tbody: ({ children }) => (
+          <tbody className="divide-y divide-border">
+            {children}
+          </tbody>
+        ),
+        tr: ({ children }) => (
+          <tr className="hover:bg-muted/30 transition-colors">
+            {children}
+          </tr>
+        ),
         th: ({ children }) => (
-          <th className="border border-border px-4 py-2 text-left font-medium">
+          <th className="px-4 py-3 text-left font-semibold text-foreground border-r border-border last:border-r-0">
             {children}
           </th>
         ),
         td: ({ children }) => (
-          <td className="border border-border px-4 py-2">
+          <td className="px-4 py-3 text-foreground border-r border-border last:border-r-0">
             {children}
           </td>
         ),
@@ -88,6 +98,28 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
           <h3 className="text-lg font-medium mb-2 text-foreground">
             {children}
           </h3>
+        ),
+        img: ({ src, alt, ...props }) => (
+          <div className="my-4">
+            <img
+              src={src}
+              alt={alt || 'Generated image'}
+              className="max-w-full h-auto rounded-lg shadow-chat border border-border"
+              loading="lazy"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'bg-destructive/10 border border-destructive/20 rounded-lg p-4 text-center';
+                errorDiv.innerHTML = `
+                  <p class="text-destructive font-medium mb-1">Image Load Error</p>
+                  <p class="text-sm text-muted-foreground">Failed to load image: ${alt || src}</p>
+                `;
+                target.parentNode?.replaceChild(errorDiv, target);
+              }}
+              {...props}
+            />
+          </div>
         ),
       }}
       >
