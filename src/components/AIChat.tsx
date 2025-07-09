@@ -118,7 +118,7 @@ const AIChat: React.FC<AIChatProps> = ({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
-          messages: [{ role: 'user', content: userMessage.content }]
+          question: userMessage.content
         }),
       });
 
