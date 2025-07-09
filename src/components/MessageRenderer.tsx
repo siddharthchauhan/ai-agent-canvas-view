@@ -254,9 +254,9 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
         case 'graphviz':
           return data.graph_dot;
         case 'markdown':
-          return data.message || data.note || JSON.stringify(data, null, 2);
+          return data.text || data.message || data.note || JSON.stringify(data, null, 2);
         default:
-          return data.message || data.note || data;
+          return data.text || data.message || data.note || data;
       }
     }
     return data;
@@ -264,6 +264,26 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
 
   // Main rendering logic
   const extractedContent = extractContent(content, type);
+  
+  // Handle combined content (text + causal graph)
+  if (type === 'markdown' && typeof content === 'object' && content?.graph_dot) {
+    return (
+      <div className="space-y-4">
+        {renderMarkdown(extractedContent)}
+        <div className="border-t border-border pt-4">
+          <h4 className="text-sm font-medium text-muted-foreground mb-3">
+            Causal Graph Visualization
+          </h4>
+          {renderGraphviz(content.graph_dot)}
+          {content.edges_count && (
+            <div className="mt-2 text-xs text-muted-foreground">
+              Graph details: {content.edges_count} edges, threshold: {content.threshold_used}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
   
   switch (type) {
     case 'html':

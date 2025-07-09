@@ -43,14 +43,14 @@ const AIChat: React.FC<AIChatProps> = ({
   const detectResponseType = (response: any): ResponseType => {
     // Handle object responses from causal agent
     if (typeof response === 'object' && response !== null) {
+      // Check for DOT graphs (causal graphs)
+      if (response.graph_dot) {
+        return 'graphviz';
+      }
+      
       // Check for Plotly charts
       if (response.ate_plot || response.visualization) {
         return 'plotly';
-      }
-      
-      // Check for DOT graphs
-      if (response.graph_dot) {
-        return 'graphviz';
       }
       
       // Check for direct Plotly structure
@@ -59,18 +59,18 @@ const AIChat: React.FC<AIChatProps> = ({
       }
       
       // Check for markdown content
-      if (response.message || response.note) {
-        const content = response.message || response.note;
-        if (typeof content === 'string' && 
-            (content.includes('#') || content.includes('**') || content.includes('*') || 
-             content.includes('-') || content.includes('1.'))) {
-          return 'markdown';
-        }
+      if (response.text || response.message || response.note) {
+        return 'markdown';
       }
     }
     
     // Check if response is a string
     if (typeof response === 'string') {
+      // Check for DOT graph format
+      if (response.includes('digraph') && response.includes('{') && response.includes('}')) {
+        return 'graphviz';
+      }
+      
       // Check for Plotly JSON structure
       if (response.trim().startsWith('{') && response.includes('"data"') && response.includes('"layout"')) {
         try {
@@ -128,30 +128,76 @@ const AIChat: React.FC<AIChatProps> = ({
 
       const data = await response.json();
       
-      // Parse the nested toolOutput structure
+      // Handle complex nested structure from Flowise causal agent
       let actualContent = data.response || data;
-      if (data.toolOutput && Array.isArray(data.toolOutput)) {
-  const first = data.toolOutput[0];
-
-      if (first.type === 'text' && typeof first.text === 'string') {
+      let extractedVisualizations: any = null;
+      
+      // Check for agentFlowExecutedData structure (your causal agent format)
+      if (data.agentFlowExecutedData && Array.isArray(data.agentFlowExecutedData)) {
         try {
-          const parsed = JSON.parse(first.text);
-    
-          // Check if parsed contains graph_dot or visualization
-          if (parsed.graph_dot || parsed.ate_plot || parsed.visualization || parsed.message) {
-            actualContent = parsed;
-          } else {
-            actualContent = first.text;  // Just show as markdown
+          // Find the agent node with usedTools
+          const agentNode = data.agentFlowExecutedData.find((node: any) => 
+            node.data?.output?.usedTools && Array.isArray(node.data.output.usedTools)
+          );
+          
+          if (agentNode) {
+            // Get the main text content
+            if (agentNode.data.output.content) {
+              actualContent = { text: agentNode.data.output.content };
+            }
+            
+            // Extract visualization data from usedTools
+            const causalGraphTool = agentNode.data.output.usedTools.find((tool: any) => 
+              tool.tool === 'learn_and_plot_causal_graph' && tool.toolOutput
+            );
+            
+            if (causalGraphTool && causalGraphTool.toolOutput) {
+              try {
+                const toolOutputParsed = JSON.parse(causalGraphTool.toolOutput);
+                if (toolOutputParsed[0]?.text) {
+                  const graphData = JSON.parse(toolOutputParsed[0].text);
+                  if (graphData.graph_dot) {
+                    // Combine text and graph data
+                    actualContent = {
+                      text: actualContent.text || data.text,
+                      graph_dot: graphData.graph_dot,
+                      threshold_used: graphData.threshold_used,
+                      edges_count: graphData.edges_count,
+                      adjacency_matrix_shape: graphData.adjacency_matrix_shape,
+                      non_zero_weights: graphData.non_zero_weights,
+                      selected_features: graphData.selected_features
+                    };
+                  }
+                }
+              } catch (error) {
+                console.warn('Failed to parse causal graph tool output:', error);
+              }
+            }
           }
         } catch (error) {
-          console.warn('toolOutput parse error:', error);
-          actualContent = first.text;  // fallback as plain string
+          console.warn('Failed to parse agentFlowExecutedData:', error);
         }
-      } else {
-        actualContent = first;
       }
-    }
-
+      
+      // Fallback to original toolOutput parsing
+      if (data.toolOutput && Array.isArray(data.toolOutput)) {
+        const first = data.toolOutput[0];
+        if (first.type === 'text' && typeof first.text === 'string') {
+          try {
+            const parsed = JSON.parse(first.text);
+            if (parsed.graph_dot || parsed.ate_plot || parsed.visualization || parsed.message) {
+              actualContent = parsed;
+            } else {
+              actualContent = first.text;
+            }
+          } catch (error) {
+            console.warn('toolOutput parse error:', error);
+            actualContent = first.text;
+          }
+        } else {
+          actualContent = first;
+        }
+      }
       
       const responseType = detectResponseType(actualContent);
       
