@@ -1,12 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Moon, Sun, Settings } from 'lucide-react';
+import { Moon, Sun, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useToast } from '@/hooks/use-toast';
-import MessageRenderer from './MessageRenderer';
-import { Message, ResponseType } from '@/types/chat';
+import { useAIChat } from '@/hooks/useAIChat';
+import SettingsPanel from './AIChat/SettingsPanel';
+import MessageList from './AIChat/MessageList';
+import ChatInput from './AIChat/ChatInput';
 
 interface AIChatProps {
   apiEndpoint?: string;
@@ -19,13 +18,16 @@ const AIChat: React.FC<AIChatProps> = ({
   darkMode = false,
   onToggleTheme 
 }) => {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [currentEndpoint, setCurrentEndpoint] = useState(apiEndpoint);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const { toast } = useToast();
+  
+  const {
+    messages,
+    isLoading,
+    currentEndpoint,
+    setCurrentEndpoint,
+    handleSubmit
+  } = useAIChat({ apiEndpoint });
 
   const scrollToBottom = () => {
     if (scrollAreaRef.current) {
@@ -36,393 +38,9 @@ const AIChat: React.FC<AIChatProps> = ({
     }
   };
 
-  // Function to extract Plotly data from Python code
-  const extractPlotlyFromPython = (pythonCode: string): any => {
-    try {
-      // Look for simple array patterns like "age_data = [74, 63, 45, ...]"
-      const simpleArrayMatch = pythonCode.match(/(\w+)\s*=\s*\[([0-9\s,]+)\]/);
-      
-      // Look for data object arrays
-      const dataMatch = pythonCode.match(/data\s*=\s*(\[[\s\S]*?\])/);
-      
-      // Look for go.Figure patterns
-      const goFigureMatch = pythonCode.match(/go\.Figure\(data=\[go\.(Bar|Scatter|Line)\((.*?)\)\]/);
-      
-      // Look for px (plotly express) patterns  
-      const pxMatch = pythonCode.match(/px\.(scatter|bar|line|histogram)\(([^)]*)\)/);
-
-      let plotlyData: any = null;
-
-      // Handle px.bar with DataFrame processing (like the age distribution example)
-      if (pxMatch && simpleArrayMatch) {
-        const chartType = pxMatch[1];
-        const params = pxMatch[2];
-        
-        // Extract parameters from px.bar call
-        const titleMatch = params.match(/title=['"]([^'"]+)['"]/);
-        const xMatch = params.match(/x=['"]([^'"]+)['"]/);
-        const yMatch = params.match(/y=['"]([^'"]+)['"]/);
-        const colorMatch = params.match(/color=['"]([^'"]+)['"]/);
-        const colorScaleMatch = params.match(/color_continuous_scale=['"]([^'"]+)['"]/);
-        
-        // Parse the simple array
-        const arrayName = simpleArrayMatch[1];
-        const arrayValues = simpleArrayMatch[2].split(',').map(v => parseInt(v.trim()));
-        
-        // Check for value_counts() pattern - create frequency distribution
-        if (pythonCode.includes('value_counts()')) {
-          // Create frequency distribution data
-          const freq: { [key: number]: number } = {};
-          arrayValues.forEach(val => {
-            freq[val] = (freq[val] || 0) + 1;
-          });
-          
-          const sortedKeys = Object.keys(freq).map(k => parseInt(k)).sort((a, b) => a - b);
-          const counts = sortedKeys.map(k => freq[k]);
-          
-          plotlyData = {
-            data: [{
-              x: sortedKeys,
-              y: counts,
-              type: 'bar',
-              marker: {
-                color: counts,
-                colorscale: colorScaleMatch?.[1] || 'Turbo',
-                showscale: false
-              }
-            }],
-            layout: {
-              title: titleMatch?.[1] || 'Chart',
-              xaxis: { title: xMatch?.[1] || 'X Axis' },
-              yaxis: { title: yMatch?.[1] || 'Y Axis' },
-              margin: { t: 60, r: 40, b: 60, l: 60 }
-            }
-          };
-        }
-      }
-      
-      // Handle go.Figure with go.Bar pattern
-      else if (goFigureMatch) {
-        const chartType = goFigureMatch[1].toLowerCase();
-        const params = goFigureMatch[2];
-        
-        // Extract x and y from go.Bar parameters
-        const xMatch = params.match(/x=([^,)]+)/);
-        const yMatch = params.match(/y=([^,)]+)/);
-        const markerColorMatch = params.match(/marker_color=['"]([^'"]+)['"]/);
-        
-        // Extract title from update_layout
-        const titleMatch = pythonCode.match(/title=['"]([^'"]+)['"]/);
-        const xAxisMatch = pythonCode.match(/xaxis_title=['"]([^'"]+)['"]/);
-        const yAxisMatch = pythonCode.match(/yaxis_title=['"]([^'"]+)['"]/);
-
-        if (simpleArrayMatch && xMatch && yMatch) {
-          // Parse the simple array
-          const arrayName = simpleArrayMatch[1];
-          const arrayValues = simpleArrayMatch[2].split(',').map(v => parseInt(v.trim()));
-          
-          // Check for frequency distribution pattern
-          if (pythonCode.includes('value_counts()') && pythonCode.includes('sort_index()')) {
-            // Create frequency distribution data
-            const freq: { [key: number]: number } = {};
-            arrayValues.forEach(val => {
-              freq[val] = (freq[val] || 0) + 1;
-            });
-            
-            const sortedKeys = Object.keys(freq).map(k => parseInt(k)).sort((a, b) => a - b);
-            
-            plotlyData = {
-              data: [{
-                x: sortedKeys,
-                y: sortedKeys.map(k => freq[k]),
-                type: 'bar',
-                marker: {
-                  color: markerColorMatch ? markerColorMatch[1] : 'mediumvioletred'
-                }
-              }],
-              layout: {
-                title: titleMatch?.[1] || 'Chart',
-                xaxis: { title: xAxisMatch?.[1] || 'X Axis' },
-                yaxis: { title: yAxisMatch?.[1] || 'Y Axis' },
-                template: 'plotly_white',
-                margin: { t: 60, r: 40, b: 60, l: 60 }
-              }
-            };
-          }
-        }
-      }
-      
-      // Handle px (plotly express) patterns with data objects
-      else if (pxMatch && dataMatch) {
-        let dataString = dataMatch[1];
-        
-        // Clean up the data string - handle truncated data
-        if (dataString.includes('...')) {
-          console.warn('Data appears to be truncated in Python code');
-          return null;
-        }
-
-        // Try to parse the data array as JSON
-        const data = JSON.parse(dataString.replace(/'/g, '"'));
-        
-        const plotType = pxMatch[1];
-        
-        // Extract plot parameters
-        const titleMatch = pythonCode.match(/title=['"]([^'"]+)['"]/);
-        const xMatch = pythonCode.match(/x=['"]([^'"]+)['"]/);
-        const yMatch = pythonCode.match(/y=['"]([^'"]+)['"]/);
-        const colorMatch = pythonCode.match(/color=['"]([^'"]+)['"]/);
-
-        plotlyData = {
-          data: [{
-            x: data.map((item: any) => item[xMatch?.[1] || 'x']),
-            y: data.map((item: any) => item[yMatch?.[1] || 'y']),
-            type: plotType === 'scatter' ? 'scatter' : plotType,
-            mode: plotType === 'scatter' ? 'markers' : undefined,
-            marker: colorMatch ? {
-              color: data.map((item: any) => item[colorMatch[1]]),
-              colorscale: 'Viridis',
-              showscale: true
-            } : undefined
-          }],
-          layout: {
-            title: titleMatch?.[1] || 'Chart',
-            xaxis: { title: xMatch?.[1] || 'X Axis' },
-            yaxis: { title: yMatch?.[1] || 'Y Axis' },
-            margin: { t: 40, r: 40, b: 40, l: 40 }
-          }
-        };
-      }
-
-      return plotlyData;
-    } catch (error) {
-      console.warn('Failed to extract Plotly data from Python code:', error);
-      return null;
-    }
-  };
-
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-
-  const detectResponseType = (response: any): ResponseType => {
-    // Handle object responses from causal agent
-    if (typeof response === 'object' && response !== null) {
-      // Check for combined content (text + graph/chart)
-      if (response.text && (response.graph_dot || (response.data && response.layout))) {
-        return 'combined'; // Will handle both text and visualization
-      }
-      
-      // Check for DOT graphs (causal graphs)
-      if (response.graph_dot) {
-        return 'graphviz';
-      }
-      
-      // Check for Plotly charts
-      if (response.ate_plot || response.visualization) {
-        return 'plotly';
-      }
-      
-      // Check for direct Plotly structure
-      if (response.data && response.layout) {
-        return 'plotly';
-      }
-      
-      // Check for markdown content
-      if (response.text || response.message || response.note) {
-        return 'markdown';
-      }
-    }
-    
-    // Check if response is a string
-    if (typeof response === 'string') {
-      // Check for DOT graph format
-      if (response.includes('digraph') && response.includes('{') && response.includes('}')) {
-        return 'graphviz';
-      }
-      
-      // Check for Plotly JSON structure
-      if (response.trim().startsWith('{') && response.includes('"data"') && response.includes('"layout"')) {
-        try {
-          const parsed = JSON.parse(response);
-          if (parsed.data && parsed.layout) {
-            return 'plotly';
-          }
-        } catch {
-          // Not valid JSON, continue
-        }
-      }
-      
-      // Check for HTML table
-      if (response.includes('<table') || response.includes('<tr') || response.includes('<td')) {
-        return 'html';
-      }
-      
-      // Default to markdown
-      return 'markdown';
-    }
-    
-    // Default fallback
-    return 'markdown';
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      type: 'user',
-      content: input.trim(),
-      timestamp: new Date()
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
-    setIsLoading(true);
-
-    try {
-      const response = await fetch(currentEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          question: userMessage.content
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      
-      // Handle complex nested structure from Flowise causal agent
-      let actualContent = data.response || data;
-      let extractedVisualizations: any = null;
-      
-      // Check for agentFlowExecutedData structure (your causal agent format)
-      if (data.agentFlowExecutedData && Array.isArray(data.agentFlowExecutedData)) {
-        try {
-          // Find the agent node with usedTools
-          const agentNode = data.agentFlowExecutedData.find((node: any) => 
-            node.data?.output?.usedTools && Array.isArray(node.data.output.usedTools)
-          );
-          
-          if (agentNode) {
-            // Get the main text content
-            if (agentNode.data.output.content) {
-              actualContent = { text: agentNode.data.output.content };
-            }
-            
-            // Look for code_interpreter tools with Plotly code (use latest one)
-            const codeInterpreterTools = agentNode.data.output.usedTools.filter((tool: any) => 
-              tool.tool === 'code_interpreter' && tool.toolInput?.input
-            );
-            
-            if (codeInterpreterTools.length > 0) {
-              const latestCodeTool = codeInterpreterTools[codeInterpreterTools.length - 1];
-              const pythonCode = latestCodeTool.toolInput.input;
-              
-              // Extract Plotly data from Python code
-              const plotlyData = extractPlotlyFromPython(pythonCode);
-              if (plotlyData) {
-                // Combine text and Plotly data
-                actualContent = {
-                  text: actualContent.text || data.text,
-                  data: plotlyData.data,
-                  layout: plotlyData.layout
-                };
-              }
-            }
-            
-            // Also check for causal graph tools
-            const causalGraphTool = agentNode.data.output.usedTools.find((tool: any) => 
-              tool.tool === 'learn_and_plot_causal_graph' && tool.toolOutput
-            );
-            
-            if (causalGraphTool && causalGraphTool.toolOutput) {
-              try {
-                const toolOutputParsed = JSON.parse(causalGraphTool.toolOutput);
-                if (toolOutputParsed[0]?.text) {
-                  const graphData = JSON.parse(toolOutputParsed[0].text);
-                  if (graphData.graph_dot) {
-                    // Combine text and graph data
-                    actualContent = {
-                      ...actualContent,
-                      text: actualContent.text || data.text,
-                      graph_dot: graphData.graph_dot,
-                      threshold_used: graphData.threshold_used,
-                      edges_count: graphData.edges_count,
-                      adjacency_matrix_shape: graphData.adjacency_matrix_shape,
-                      non_zero_weights: graphData.non_zero_weights,
-                      selected_features: graphData.selected_features
-                    };
-                  }
-                }
-              } catch (error) {
-                console.warn('Failed to parse causal graph tool output:', error);
-              }
-            }
-          }
-        } catch (error) {
-          console.warn('Failed to parse agentFlowExecutedData:', error);
-        }
-      }
-      
-      // Fallback to original toolOutput parsing
-      if (data.toolOutput && Array.isArray(data.toolOutput)) {
-        const first = data.toolOutput[0];
-        if (first.type === 'text' && typeof first.text === 'string') {
-          try {
-            const parsed = JSON.parse(first.text);
-            if (parsed.graph_dot || parsed.ate_plot || parsed.visualization || parsed.message) {
-              actualContent = parsed;
-            } else {
-              actualContent = first.text;
-            }
-          } catch (error) {
-            console.warn('toolOutput parse error:', error);
-            actualContent = first.text;
-          }
-        } else {
-          actualContent = first;
-        }
-      }
-      
-      const responseType = detectResponseType(actualContent);
-      
-      const agentMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'agent',
-        content: actualContent,
-        responseType,
-        timestamp: new Date()
-      };
-
-      setMessages(prev => [...prev, agentMessage]);
-    } catch (error) {
-      console.error('Error calling AI agent:', error);
-      toast({
-        title: "Error",
-        description: "Failed to connect to AI agent. Please check your endpoint configuration.",
-        variant: "destructive",
-      });
-      
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'agent',
-        content: `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`,
-        responseType: 'markdown',
-        timestamp: new Date()
-      };
-      
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   return (
     <div className="flex flex-col h-screen bg-background">
@@ -456,112 +74,22 @@ const AIChat: React.FC<AIChatProps> = ({
 
       {/* Settings Panel */}
       {showSettings && (
-        <Card className="m-4 p-4 animate-slide-up">
-          <div className="space-y-3">
-            <label className="text-sm font-medium text-foreground">
-              API Endpoint:
-            </label>
-            <Input
-              value={currentEndpoint}
-              onChange={(e) => setCurrentEndpoint(e.target.value)}
-              placeholder="Enter your AI agent endpoint URL"
-              className="font-mono text-sm"
-            />
-            <p className="text-xs text-muted-foreground">
-              Configure the endpoint where your AI agent is hosted. Default: {apiEndpoint}
-            </p>
-          </div>
-        </Card>
+        <SettingsPanel
+          currentEndpoint={currentEndpoint}
+          setCurrentEndpoint={setCurrentEndpoint}
+          defaultEndpoint={apiEndpoint}
+        />
       )}
 
       {/* Messages Area */}
       <ScrollArea ref={scrollAreaRef} className="flex-1 p-4">
         <div className="space-y-4 max-w-4xl mx-auto">
-          {messages.length === 0 && (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 bg-gradient-primary rounded-full mx-auto mb-4 flex items-center justify-center">
-                <div className="w-8 h-8 bg-primary-foreground rounded-full"></div>
-              </div>
-              <h3 className="text-lg font-medium text-foreground mb-2">
-                Welcome to Your AI Agent
-              </h3>
-              <p className="text-muted-foreground">
-                Start a conversation by typing a message below. I can help with text, tables, and data visualizations.
-              </p>
-            </div>
-          )}
-          
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}
-            >
-              <div
-                className={`max-w-[80%] rounded-xl p-4 ${
-                  message.type === 'user'
-                    ? 'bg-chat-user text-chat-user-foreground ml-12'
-                    : 'bg-chat-agent text-chat-agent-foreground border border-border mr-12'
-                } shadow-chat`}
-              >
-                {message.type === 'agent' && (
-                  <MessageRenderer 
-                    content={message.content} 
-                    type={message.responseType || 'markdown'} 
-                  />
-                )}
-                {message.type === 'user' && (
-                  <p className="whitespace-pre-wrap">{message.content}</p>
-                )}
-                
-                <div className="mt-2 text-xs opacity-70">
-                  {message.timestamp.toLocaleTimeString()}
-                </div>
-              </div>
-            </div>
-          ))}
-          
-          {isLoading && (
-            <div className="flex justify-start animate-fade-in">
-              <div className="bg-chat-agent text-chat-agent-foreground border border-border rounded-xl p-4 mr-12 shadow-chat">
-                <div className="flex items-center space-x-2">
-                  <div className="flex space-x-1">
-                    <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
-                    <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                    <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                  </div>
-                  <span className="text-sm text-muted-foreground">AI is thinking...</span>
-                </div>
-              </div>
-            </div>
-          )}
+          <MessageList messages={messages} isLoading={isLoading} />
         </div>
       </ScrollArea>
 
       {/* Input Area */}
-      <div className="border-t bg-card p-4 shadow-elevated">
-        <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
-          <div className="flex space-x-3">
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Type your message here..."
-              disabled={isLoading}
-              className="flex-1 bg-background border-border focus:ring-primary"
-            />
-            <Button
-              type="submit"
-              disabled={isLoading || !input.trim()}
-              variant="chat"
-              size="chat"
-            >
-              <Send className="h-5 w-5" />
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground mt-2 text-center">
-            Send messages to your AI agent for analysis, charts, and insights
-          </p>
-        </form>
-      </div>
+      <ChatInput onSubmit={handleSubmit} isLoading={isLoading} />
     </div>
   );
 };
