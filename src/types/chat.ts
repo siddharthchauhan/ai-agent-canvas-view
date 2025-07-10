@@ -1,4 +1,4 @@
-export type ResponseType = 'markdown' | 'html' | 'plotly' | 'graphviz';
+export type ResponseType = 'markdown' | 'html' | 'plotly' | 'graphviz' | 'combined';
 
 export interface Message {
   id: string;

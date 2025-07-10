@@ -253,6 +253,8 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
           return data.ate_plot || data.visualization || data;
         case 'graphviz':
           return data.graph_dot;
+        case 'combined':
+          return data; // Return the whole object for combined rendering
         case 'markdown':
           return data.text || data.message || data.note || JSON.stringify(data, null, 2);
         default:
@@ -292,6 +294,33 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
       return renderPlotly(extractedContent);
     case 'graphviz':
       return renderGraphviz(extractedContent);
+    case 'combined':
+      return (
+        <div className="space-y-4">
+          {extractedContent.text && renderMarkdown(extractedContent.text)}
+          {extractedContent.graph_dot && (
+            <div className="border-t border-border pt-4">
+              <h4 className="text-sm font-medium text-muted-foreground mb-3">
+                Causal Graph Visualization
+              </h4>
+              {renderGraphviz(extractedContent.graph_dot)}
+              {extractedContent.edges_count && (
+                <div className="mt-2 text-xs text-muted-foreground">
+                  Graph details: {extractedContent.edges_count} edges, threshold: {extractedContent.threshold_used}
+                </div>
+              )}
+            </div>
+          )}
+          {(extractedContent.data && extractedContent.layout) && (
+            <div className="border-t border-border pt-4">
+              <h4 className="text-sm font-medium text-muted-foreground mb-3">
+                Chart Visualization
+              </h4>
+              {renderPlotly({ data: extractedContent.data, layout: extractedContent.layout })}
+            </div>
+          )}
+        </div>
+      );
     case 'markdown':
     default:
       return renderMarkdown(typeof extractedContent === 'string' ? extractedContent : JSON.stringify(extractedContent, null, 2));

@@ -36,6 +36,66 @@ const AIChat: React.FC<AIChatProps> = ({
     }
   };
 
+  // Function to extract Plotly data from Python code
+  const extractPlotlyFromPython = (pythonCode: string): any => {
+    try {
+      // Look for data array in the Python code
+      const dataMatch = pythonCode.match(/data\s*=\s*(\[[\s\S]*?\])/);
+      if (!dataMatch) return null;
+
+      // Extract the data array string
+      let dataString = dataMatch[1];
+      
+      // Clean up the data string - handle truncated data
+      if (dataString.includes('...')) {
+        // If data is truncated, we can't parse it properly
+        console.warn('Data appears to be truncated in Python code');
+        return null;
+      }
+
+      // Try to parse the data array as JSON
+      const data = JSON.parse(dataString.replace(/'/g, '"'));
+      
+      // Look for Plotly figure creation
+      const figMatch = pythonCode.match(/px\.(scatter|bar|line|histogram)[^)]*\)/);
+      if (!figMatch) return null;
+
+      const plotType = figMatch[1];
+      
+      // Extract plot parameters
+      const titleMatch = pythonCode.match(/title=['"]([^'"]+)['"]/);
+      const xMatch = pythonCode.match(/x=['"]([^'"]+)['"]/);
+      const yMatch = pythonCode.match(/y=['"]([^'"]+)['"]/);
+      const colorMatch = pythonCode.match(/color=['"]([^'"]+)['"]/);
+
+      // Create a basic Plotly config
+      const plotlyData = {
+        data: [{
+          x: data.map((item: any) => item[xMatch?.[1] || 'x']),
+          y: data.map((item: any) => item[yMatch?.[1] || 'y']),
+          type: plotType === 'scatter' ? 'scatter' : plotType,
+          mode: plotType === 'scatter' ? 'markers' : undefined,
+          marker: colorMatch ? {
+            color: data.map((item: any) => item[colorMatch[1]]),
+            colorscale: 'Viridis',
+            showscale: true
+          } : undefined
+        }],
+        layout: {
+          title: titleMatch?.[1] || 'Chart',
+          xaxis: { title: xMatch?.[1] || 'X Axis' },
+          yaxis: { title: yMatch?.[1] || 'Y Axis' },
+          margin: { t: 40, r: 40, b: 40, l: 40 }
+        }
+      };
+
+      return plotlyData;
+    } catch (error) {
+      console.warn('Failed to extract Plotly data from Python code:', error);
+      return null;
+    }
+  };
+
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
@@ -43,6 +103,11 @@ const AIChat: React.FC<AIChatProps> = ({
   const detectResponseType = (response: any): ResponseType => {
     // Handle object responses from causal agent
     if (typeof response === 'object' && response !== null) {
+      // Check for combined content (text + graph/chart)
+      if (response.text && (response.graph_dot || (response.data && response.layout))) {
+        return 'combined'; // Will handle both text and visualization
+      }
+      
       // Check for DOT graphs (causal graphs)
       if (response.graph_dot) {
         return 'graphviz';
@@ -146,7 +211,28 @@ const AIChat: React.FC<AIChatProps> = ({
               actualContent = { text: agentNode.data.output.content };
             }
             
-            // Extract visualization data from usedTools
+            // Look for code_interpreter tools with Plotly code (use latest one)
+            const codeInterpreterTools = agentNode.data.output.usedTools.filter((tool: any) => 
+              tool.tool === 'code_interpreter' && tool.toolInput?.input
+            );
+            
+            if (codeInterpreterTools.length > 0) {
+              const latestCodeTool = codeInterpreterTools[codeInterpreterTools.length - 1];
+              const pythonCode = latestCodeTool.toolInput.input;
+              
+              // Extract Plotly data from Python code
+              const plotlyData = extractPlotlyFromPython(pythonCode);
+              if (plotlyData) {
+                // Combine text and Plotly data
+                actualContent = {
+                  text: actualContent.text || data.text,
+                  data: plotlyData.data,
+                  layout: plotlyData.layout
+                };
+              }
+            }
+            
+            // Also check for causal graph tools
             const causalGraphTool = agentNode.data.output.usedTools.find((tool: any) => 
               tool.tool === 'learn_and_plot_causal_graph' && tool.toolOutput
             );
@@ -159,6 +245,7 @@ const AIChat: React.FC<AIChatProps> = ({
                   if (graphData.graph_dot) {
                     // Combine text and graph data
                     actualContent = {
+                      ...actualContent,
                       text: actualContent.text || data.text,
                       graph_dot: graphData.graph_dot,
                       threshold_used: graphData.threshold_used,
