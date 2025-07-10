@@ -39,7 +39,7 @@ const AIChat: React.FC<AIChatProps> = ({
   // Function to extract Plotly data from Python code
   const extractPlotlyFromPython = (pythonCode: string): any => {
     try {
-      // Look for simple array patterns like "ages = [74, 63, 45, ...]"
+      // Look for simple array patterns like "age_data = [74, 63, 45, ...]"
       const simpleArrayMatch = pythonCode.match(/(\w+)\s*=\s*\[([0-9\s,]+)\]/);
       
       // Look for data object arrays
@@ -49,12 +49,60 @@ const AIChat: React.FC<AIChatProps> = ({
       const goFigureMatch = pythonCode.match(/go\.Figure\(data=\[go\.(Bar|Scatter|Line)\((.*?)\)\]/);
       
       // Look for px (plotly express) patterns  
-      const pxMatch = pythonCode.match(/px\.(scatter|bar|line|histogram)[^)]*\)/);
+      const pxMatch = pythonCode.match(/px\.(scatter|bar|line|histogram)\(([^)]*)\)/);
 
       let plotlyData: any = null;
 
+      // Handle px.bar with DataFrame processing (like the age distribution example)
+      if (pxMatch && simpleArrayMatch) {
+        const chartType = pxMatch[1];
+        const params = pxMatch[2];
+        
+        // Extract parameters from px.bar call
+        const titleMatch = params.match(/title=['"]([^'"]+)['"]/);
+        const xMatch = params.match(/x=['"]([^'"]+)['"]/);
+        const yMatch = params.match(/y=['"]([^'"]+)['"]/);
+        const colorMatch = params.match(/color=['"]([^'"]+)['"]/);
+        const colorScaleMatch = params.match(/color_continuous_scale=['"]([^'"]+)['"]/);
+        
+        // Parse the simple array
+        const arrayName = simpleArrayMatch[1];
+        const arrayValues = simpleArrayMatch[2].split(',').map(v => parseInt(v.trim()));
+        
+        // Check for value_counts() pattern - create frequency distribution
+        if (pythonCode.includes('value_counts()')) {
+          // Create frequency distribution data
+          const freq: { [key: number]: number } = {};
+          arrayValues.forEach(val => {
+            freq[val] = (freq[val] || 0) + 1;
+          });
+          
+          const sortedKeys = Object.keys(freq).map(k => parseInt(k)).sort((a, b) => a - b);
+          const counts = sortedKeys.map(k => freq[k]);
+          
+          plotlyData = {
+            data: [{
+              x: sortedKeys,
+              y: counts,
+              type: 'bar',
+              marker: {
+                color: counts,
+                colorscale: colorScaleMatch?.[1] || 'Turbo',
+                showscale: false
+              }
+            }],
+            layout: {
+              title: titleMatch?.[1] || 'Chart',
+              xaxis: { title: xMatch?.[1] || 'X Axis' },
+              yaxis: { title: yMatch?.[1] || 'Y Axis' },
+              margin: { t: 60, r: 40, b: 60, l: 60 }
+            }
+          };
+        }
+      }
+      
       // Handle go.Figure with go.Bar pattern
-      if (goFigureMatch) {
+      else if (goFigureMatch) {
         const chartType = goFigureMatch[1].toLowerCase();
         const params = goFigureMatch[2];
         
@@ -104,7 +152,7 @@ const AIChat: React.FC<AIChatProps> = ({
         }
       }
       
-      // Handle px (plotly express) patterns
+      // Handle px (plotly express) patterns with data objects
       else if (pxMatch && dataMatch) {
         let dataString = dataMatch[1];
         
