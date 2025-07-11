@@ -3,6 +3,18 @@ import { ResponseType } from '@/types/chat';
 export const detectResponseType = (response: any): ResponseType => {
   // Handle object responses from causal agent
   if (typeof response === 'object' && response !== null) {
+    // Check for tool outputs with Plotly JSON
+    if (response.tool === 'code_interpreter' && response.toolOutput) {
+      try {
+        const toolOutput = typeof response.toolOutput === 'string' ? JSON.parse(response.toolOutput) : response.toolOutput;
+        if (toolOutput.data && toolOutput.layout) {
+          return 'plotly';
+        }
+      } catch {
+        // Not valid JSON, continue with other checks
+      }
+    }
+    
     // Check for combined content (text + graph/chart)
     if (response.text && (response.graph_dot || (response.data && response.layout))) {
       return 'combined'; // Will handle both text and visualization

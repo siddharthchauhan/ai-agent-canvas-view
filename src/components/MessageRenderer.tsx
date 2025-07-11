@@ -250,6 +250,14 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
     if (typeof data === 'object' && data !== null) {
       switch (type) {
         case 'plotly':
+          // Handle tool outputs with Plotly JSON
+          if (data.tool === 'code_interpreter' && data.toolOutput) {
+            try {
+              return typeof data.toolOutput === 'string' ? JSON.parse(data.toolOutput) : data.toolOutput;
+            } catch {
+              return data.toolOutput;
+            }
+          }
           return data.ate_plot || data.visualization || data;
         case 'graphviz':
           return data.graph_dot;
